@@ -1,0 +1,40 @@
+{
+  "name": "algovision",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A **client-only** web app that parses **Python** and **C#** source code in the browser, builds a unified **Intermediate Representation (IR)**, and renders **Mermaid** diagrams — control-flow charts, call graphs, and class diagrams — entirely offline.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "serve": "vite preview"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Zouzou-2006/AlgoVision-MakeUC-2025-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Zouzou-2006/AlgoVision-MakeUC-2025-/issues"
+  },
+  "homepage": "https://github.com/Zouzou-2006/AlgoVision-MakeUC-2025-#readme",
+  "dependencies": {
+    "@types/three": "^0.181.0",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0",
+    "three": "^0.181.0",
+    "tree-sitter": "^0.21.1",
+    "tree-sitter-c-sharp": "^0.23.1",
+    "tree-sitter-python": "^0.23.2",
+    "web-tree-sitter": "^0.25.10"
+  },
+  "devDependencies": {
+    "@types/react": "^19.2.2",
+    "@types/react-dom": "^19.2.2",
+    "@vitejs/plugin-react": "^5.1.0",
+    "typescript": "^5.9.3",
+    "vite": "^7.2.2"
+  }
+}

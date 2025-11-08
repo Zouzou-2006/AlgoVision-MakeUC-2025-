@@ -1,0 +1,63 @@
+.toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 8px 0;
+  margin-bottom: 14px;
+}
+
+.toolbar-group {
+  display: flex;
+  gap: 10px;
+}
+
+.toolbar-select {
+  background: #1a1a1a;
+  color: #00ffff;
+  border: 1px solid #00ffff;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.toolbar-select:focus {
+  outline: none;
+  border-color: #ff00ff;
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
+}
+
+.run-button {
+  display: flex;
+  align-items: center;
+  display: inline-flex;
+  padding: 8px 14px;
+  border-radius: 8px;
+  border: none;
+  cursor: pointer;
+  font-weight: 700;
+  background: var(--accent);
+  color: #080808;
+  transition: var(--transition);
+  transition: all 0.3s ease;
+}
+
+.run-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 5px 15px rgba(0, 255, 255, 0.5);
+}
+
+.run-button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+.run-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 30px rgba(0, 255, 255, 0.08);
+}
+
+.run-button:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+}
