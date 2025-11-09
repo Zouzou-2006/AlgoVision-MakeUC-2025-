@@ -8,6 +8,7 @@ type DiagramProps = {
   isVisualizing: boolean;
   onSelectNode?: (nodeId: string | null) => void;
   selectedNodeId?: string | null;
+  orbitScale?: number;
 };
 
 // Color scheme for different node types
@@ -60,7 +61,13 @@ function createNodeGeometry(type: string, size: number): THREE.BufferGeometry {
   }
 }
 
-const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onSelectNode, selectedNodeId }) => {
+const Diagram: React.FC<DiagramProps> = ({
+  visualizationData,
+  isVisualizing,
+  onSelectNode,
+  selectedNodeId,
+  orbitScale = 1,
+}) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -71,6 +78,7 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
   const lineRefs = useRef<Map<string, THREE.Line>>(new Map());
   const isDraggingRef = useRef<boolean>(false);
   const focusPointRef = useRef(new THREE.Vector3(0, 0, 0));
+  const dragMovedRef = useRef(false);
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
   const effectiveSelectedNode = selectedNodeId ?? selectedNode;
@@ -140,6 +148,7 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
         isDraggingRef.current = true;
         previousMousePosition = { x: e.clientX, y: e.clientY };
         container.style.cursor = 'grabbing';
+        dragMovedRef.current = false;
       }
     };
 
@@ -147,6 +156,10 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       if (!isDragging) return;
       const deltaX = e.clientX - previousMousePosition.x;
       const deltaY = e.clientY - previousMousePosition.y;
+
+      if (!dragMovedRef.current && (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1)) {
+        dragMovedRef.current = true;
+      }
 
       cameraAngleY += deltaX * 0.01;
       cameraAngleX += deltaY * 0.01;
@@ -170,7 +183,13 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
     container.addEventListener('mousedown', onMouseDown);
     container.addEventListener('mousemove', onMouseMoveDrag);
     container.addEventListener('mouseup', onMouseUp);
-    container.addEventListener('mouseleave', onMouseUp); // Stop dragging when mouse leaves
+    const onMouseLeave = () => {
+      isDragging = false;
+      isDraggingRef.current = false;
+      dragMovedRef.current = false;
+      container.style.cursor = 'default';
+    };
+    container.addEventListener('mouseleave', onMouseLeave); // Stop dragging when mouse leaves
     container.addEventListener('wheel', onWheel);
 
     // Animation loop
@@ -215,7 +234,7 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       container.removeEventListener('mousedown', onMouseDown);
       container.removeEventListener('mousemove', onMouseMoveDrag);
       container.removeEventListener('mouseup', onMouseUp);
-      container.removeEventListener('mouseleave', onMouseUp);
+      container.removeEventListener('mouseleave', onMouseLeave);
       container.removeEventListener('wheel', onWheel);
       
       if (animationFrameRef.current) {
@@ -304,8 +323,9 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       }
     }
 
-    const baseOrbit = 5.5;
-    const verticalSpacing = 1.8;
+    const baseOrbit = 5.5 * orbitScale;
+    const verticalSpacing = 1.8 * orbitScale;
+    const depthPhase = new Map<string, number>();
 
     const placeNode = (node: OutlineNode, position: THREE.Vector3, depth: number) => {
       nodePositions.set(node.id, position);
@@ -314,9 +334,11 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       const children = childrenMap.get(node.id);
       if (!children || children.length === 0) return;
       const orbit =
-        baseOrbit * Math.max(0.6, Math.pow(0.75, depth)) + children.length * 0.35;
+        baseOrbit * Math.max(0.6, Math.pow(0.75, depth)) + children.length * 0.35 * orbitScale;
+      depthPhase.set(node.id, depthPhase.get(node.id) ?? Math.random() * Math.PI * 2);
+      const phase = depthPhase.get(node.id)!;
       children.forEach((child, index) => {
-        const angle = (index / children.length) * Math.PI * 2;
+        const angle = phase + (index / children.length) * Math.PI * 2;
         const childPos = new THREE.Vector3(
           position.x + Math.cos(angle) * orbit,
           position.y,
@@ -327,28 +349,20 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
     };
 
     // distribute roots into layers by type to keep spacing readable
-    const rootLayers = new Map<string, OutlineNode[]>();
-    roots.forEach((root) => {
-      const layerKey = root.type;
-      const group = rootLayers.get(layerKey) ?? [];
-      group.push(root);
-      rootLayers.set(layerKey, group);
+    const rootOrbits = baseOrbit * 3;
+    const rootsSorted = [...roots];
+    rootsSorted.sort((a, b) => {
+      const order = ['module', 'namespace', 'class', 'interface', 'function', 'variable'];
+      return (order.indexOf(a.type) ?? 99) - (order.indexOf(b.type) ?? 99);
     });
-
-    let rootLayerIndex = 0;
-    const rootLayerSpacing = verticalSpacing * 2.5;
-    rootLayers.forEach((group) => {
-      const radius = baseOrbit * 2.5 + rootLayerIndex * baseOrbit;
-      group.forEach((root, index) => {
-        const angle = group.length > 1 ? (index / group.length) * Math.PI * 2 : 0;
-        const position = new THREE.Vector3(
-          Math.cos(angle) * radius,
-          rootLayerIndex * rootLayerSpacing,
-          Math.sin(angle) * radius
-        );
-        placeNode(root, position, 0);
-      });
-      rootLayerIndex += 1;
+    rootsSorted.forEach((root, index) => {
+      const angle = rootsSorted.length > 1 ? (index / rootsSorted.length) * Math.PI * 2 : 0;
+      const position = new THREE.Vector3(
+        Math.cos(angle) * rootOrbits,
+        0,
+        Math.sin(angle) * rootOrbits
+      );
+      placeNode(root, position, 0);
     });
 
     visualizationData.nodes.forEach((node) => {
@@ -443,9 +457,10 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
     // Add subtle grid helper for depth perception
     const gridHelperRadius = Math.max(10, (maxDistance || baseOrbit) * 2.5);
     const gridHelper = new THREE.GridHelper(gridHelperRadius, 10, 0x333333, 0x1a1a1a);
+    gridHelper.position.y = focusPointRef.current.y - 0.1;
     scene.add(gridHelper);
 
-  }, [visualizationData]);
+  }, [visualizationData, orbitScale]);
 
   // Handle node hover (separate from drag controls)
   useEffect(() => {
@@ -529,6 +544,10 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       if (!visualizationData || !camera) return;
       if (isDraggingRef.current) {
         isDraggingRef.current = false;
+        return;
+      }
+      if (dragMovedRef.current) {
+        dragMovedRef.current = false;
         return;
       }
       const rect = container.getBoundingClientRect();

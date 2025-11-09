@@ -424,3 +424,26 @@ body { transition: background 0.35s ease, color 0.35s ease; }
 .muted {
   color: var(--muted);
 }
+.orbit-slider {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: var(--border-radius);
+}
+
+.orbit-slider label {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-secondary);
+}
+
+.orbit-slider input[type="range"] {
+  width: 100%;
+  accent-color: var(--neon-primary);
+}

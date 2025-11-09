@@ -54,6 +54,7 @@ const App: React.FC = () => {
   const [isVisualizing, setIsVisualizing] = useState<boolean>(false);
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('python');
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [orbitScale, setOrbitScale] = useState<number>(1);
 
   const workerRef = useRef<Worker | null>(null);
   const workerReadyRef = useRef(false);
@@ -280,10 +281,26 @@ const App: React.FC = () => {
             isVisualizing={isVisualizing}
             onSelectNode={setSelectedNodeId}
             selectedNodeId={selectedNodeId}
+            orbitScale={orbitScale}
           />
         </div>
 
         <aside className="analysis-pane">
+          <div className="orbit-slider">
+            <label htmlFor="orbitScale">
+              Orbit spacing
+              <span className="orbit-value">{orbitScale.toFixed(2)}x</span>
+            </label>
+            <input
+              id="orbitScale"
+              type="range"
+              min="0.5"
+              max="2"
+              step="0.05"
+              value={orbitScale}
+              onChange={(event) => setOrbitScale(parseFloat(event.target.value))}
+            />
+          </div>
           <OutlinePanel
             nodes={vizNodes}
             selectedId={selectedNodeId}
