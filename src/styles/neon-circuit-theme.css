@@ -1,0 +1,98 @@
+/* Neon Circuit Theme - Futuristic + Glowing */
+:root {
+  /* Neon Circuit Color Palette */
+  --neon-bg: #0A0F1C;
+  --neon-primary: #00FFF5;
+  --neon-secondary: #FF2E63;
+  --neon-tertiary: #845EC2;
+  --neon-control: #FF9F1C;
+  --neon-text-primary: #EDEDED;
+  --neon-text-secondary: #A8B2D1;
+  --neon-graph-outline: #1F2833;
+  
+  /* Node Colors */
+  --neon-class: #00FFF5;
+  --neon-loop: #FF9F1C;
+  --neon-conditional: #FF2E63;
+  --neon-function: #845EC2;
+  
+  /* Background gradients */
+  --neon-bg-gradient: radial-gradient(circle at 20% 30%, #0A0F1C 0%, #000000 100%);
+  
+  /* Glow effects */
+  --neon-glow-primary: 0 0 15px rgba(0, 255, 245, 0.5);
+  --neon-glow-secondary: 0 0 15px rgba(255, 46, 99, 0.5);
+  --neon-glow-tertiary: 0 0 15px rgba(132, 94, 194, 0.5);
+  --neon-glow-control: 0 0 15px rgba(255, 159, 28, 0.5);
+  
+  /* Transitions */
+  --neon-transition: all 0.2s ease-in-out;
+}
+
+body[data-theme="neon-circuit"] {
+  background: var(--neon-bg-gradient);
+  color: var(--neon-text-primary);
+}
+
+body[data-theme="neon-circuit"]::before {
+  background: 
+    repeating-linear-gradient(90deg, rgba(0, 255, 245, 0.03) 0px, rgba(0, 255, 245, 0.03) 1px, transparent 1px, transparent 30px),
+    repeating-linear-gradient(0deg, rgba(0, 255, 245, 0.03) 0px, rgba(0, 255, 245, 0.03) 1px, transparent 1px, transparent 30px),
+    radial-gradient(circle at 20% 30%, rgba(0, 255, 245, 0.1) 0%, transparent 50%);
+  animation: neonPulse 4s ease-in-out infinite;
+}
+
+body[data-theme="neon-circuit"]::after {
+  background: linear-gradient(90deg, transparent 0%, rgba(0, 255, 245, 0.05) 50%, transparent 100%);
+  animation: neonScanline 6s linear infinite;
+}
+
+@keyframes neonPulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+@keyframes neonScanline {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100%); }
+}
+
+/* Glow utility classes */
+.neon-glow-primary {
+  box-shadow: var(--neon-glow-primary);
+  transition: var(--neon-transition);
+}
+
+.neon-glow-secondary {
+  box-shadow: var(--neon-glow-secondary);
+  transition: var(--neon-transition);
+}
+
+.neon-glow-tertiary {
+  box-shadow: var(--neon-glow-tertiary);
+  transition: var(--neon-transition);
+}
+
+.neon-glow-control {
+  box-shadow: var(--neon-glow-control);
+  transition: var(--neon-transition);
+}
+
+/* Hover effects */
+.neon-glow-primary:hover {
+  box-shadow: 0 0 25px rgba(0, 255, 245, 0.8);
+}
+
+.neon-glow-secondary:hover {
+  box-shadow: 0 0 25px rgba(255, 46, 99, 0.8);
+}
+
+.neon-glow-tertiary:hover {
+  box-shadow: 0 0 25px rgba(132, 94, 194, 0.8);
+}
+
+.neon-glow-control:hover {
+  box-shadow: 0 0 25px rgba(255, 159, 28, 0.8);
+}
+
+
