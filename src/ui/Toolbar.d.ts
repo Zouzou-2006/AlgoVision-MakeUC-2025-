@@ -1,5 +1,4 @@
 import React from 'react';
-import './Toolbar.css';
 type SupportedLanguage = 'python' | 'csharp';
 type ToolbarProps = {
     onRun: () => void;

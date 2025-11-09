@@ -1,5 +1,8 @@
 import React from 'react';
+<<<<<<< HEAD
 import './Toolbar.css';
+=======
+>>>>>>> a673469819c5262bea9f9db0f9250f2b9be98e7c
 
 type SupportedLanguage = 'python' | 'csharp';
 
@@ -12,6 +15,7 @@ type ToolbarProps = {
   isVisualizing: boolean;
 };
 
+<<<<<<< HEAD
 const Toolbar: React.FC<ToolbarProps> = ({ 
   onRun, 
   onLanguageChange, 
@@ -59,6 +63,19 @@ const Toolbar: React.FC<ToolbarProps> = ({
         >
           <option value="neon-circuit">Neon Circuit</option>
           <option value="futuristic">Futuristic</option>
+=======
+const Toolbar: React.FC<ToolbarProps> = ({ onRun, onLanguageChange, isVisualizing, onThemeChange, currentTheme, currentLanguage }) => {
+  return (
+    <div className="toolbar">
+      <button className="btn btn-primary run-button" onClick={onRun} disabled={isVisualizing}>{isVisualizing ? 'Rendering...' : 'Run Visualization'}</button>
+      <div className="toolbar-group">
+        <select className="toolbar-select" value={currentLanguage || 'python'} onChange={(e) => onLanguageChange((e.target as HTMLSelectElement).value as SupportedLanguage)}>
+        <option value="python">Python</option>
+        <option value="csharp">C#</option>
+        </select>
+
+        <select className="toolbar-select" value={currentTheme} onChange={(e) => onThemeChange?.((e.target as HTMLSelectElement).value)}>
+>>>>>>> a673469819c5262bea9f9db0f9250f2b9be98e7c
           <option value="neon">Neon</option>
           <option value="sunset">Sunset</option>
           <option value="glass">Glass</option>

@@ -6,7 +6,7 @@ type DiagramProps = {
     isVisualizing: boolean;
     onSelectNode?: (nodeId: string | null) => void;
     selectedNodeId?: string | null;
-    code?: string;
+    orbitScale?: number;
 };
 declare const Diagram: React.FC<DiagramProps>;
 export default Diagram;

@@ -56,7 +56,11 @@ const NodeDetails: React.FC<NodeDetailsProps> = ({ node, edges, allNodes, code }
             </div>
             {node.location && (
               <div className="node-details__range">
+<<<<<<< HEAD
                 L{node.location.start.line + 1}:{node.location.start.column + 1} - L
+=======
+                L{node.location.start.line + 1}:{node.location.start.column + 1} – L
+>>>>>>> a673469819c5262bea9f9db0f9250f2b9be98e7c
                 {node.location.end.line + 1}:{node.location.end.column + 1}
               </div>
             )}
