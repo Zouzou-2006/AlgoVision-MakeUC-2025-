@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.env
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+coverage/
+/.cache
+# Optional editor temp files
+*.swp
+*.swo
+
+# Keep lockfiles in repo (don't ignore package-lock.json)
