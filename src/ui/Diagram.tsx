@@ -1,11 +1,13 @@
 import React, { useRef, useEffect, useState, useMemo } from 'react';
 import * as THREE from 'three';
-import type { VisualizationData } from '../core/ir';
+import type { VisualizationData, OutlineNode } from '../core/ir';
 import './Diagram.css';
 
 type DiagramProps = {
   visualizationData: VisualizationData | null;
   isVisualizing: boolean;
+  onSelectNode?: (nodeId: string | null) => void;
+  selectedNodeId?: string | null;
 };
 
 // Color scheme for different node types
@@ -58,7 +60,7 @@ function createNodeGeometry(type: string, size: number): THREE.BufferGeometry {
   }
 }
 
-const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) => {
+const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onSelectNode, selectedNodeId }) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
@@ -68,8 +70,15 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
   const meshRefs = useRef<Map<string, THREE.Mesh>>(new Map());
   const lineRefs = useRef<Map<string, THREE.Line>>(new Map());
   const isDraggingRef = useRef<boolean>(false);
+  const focusPointRef = useRef(new THREE.Vector3(0, 0, 0));
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+  const effectiveSelectedNode = selectedNodeId ?? selectedNode;
+  useEffect(() => {
+    if (selectedNodeId !== undefined) {
+      setSelectedNode(selectedNodeId);
+    }
+  }, [selectedNodeId]);
   const hoveredDetails = useMemo(() => {
     if (!hoveredNode || !visualizationData) return null;
     return visualizationData.nodes.find((n) => n.id === hoveredNode) ?? null;
@@ -170,11 +179,12 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
 
       // Update camera position based on controls
       if (cameraRef.current) {
-        const x = Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
-        const y = Math.sin(cameraAngleX) * cameraDistance;
-        const z = Math.cos(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
-        cameraRef.current.position.set(x, y, z);
-        cameraRef.current.lookAt(0, 0, 0);
+        const focus = focusPointRef.current ?? new THREE.Vector3(0, 0, 0);
+        const offsetX = Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
+        const offsetY = Math.sin(cameraAngleX) * cameraDistance;
+        const offsetZ = Math.cos(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
+        cameraRef.current.position.set(focus.x + offsetX, focus.y + offsetY, focus.z + offsetZ);
+        cameraRef.current.lookAt(focus);
       }
 
       // Rotate nodes slightly for visual appeal
@@ -269,54 +279,75 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
     });
     lineRefs.current.clear();
 
-    // Calculate hierarchical layout based on node types
-    const nodeCount = visualizationData.nodes.length;
-    const radius = Math.max(6, Math.min(12, nodeCount * 0.6));
+    // Build parent-child relationships
     const nodePositions = new Map<string, THREE.Vector3>();
-
-    // Group nodes by type for better organization
-    const nodesByType = new Map<string, typeof visualizationData.nodes>();
-    visualizationData.nodes.forEach(node => {
-      if (!nodesByType.has(node.type)) {
-        nodesByType.set(node.type, []);
-      }
-      nodesByType.get(node.type)!.push(node);
-    });
-
-    // Position nodes in layers by type
-    const typeLayers: Record<string, number> = {
-      module: 3,
-      namespace: 2.5,
-      class: 2,
-      interface: 1.8,
-      function: 1,
-      variable: 0.5,
-      loop: 0.3,
-      conditional: 0.3,
-    };
+    const depthMap = new Map<string, number>();
+    const childrenMap = new Map<string, OutlineNode[]>();
+    const roots: OutlineNode[] = [];
+    let maxDistance = 0;
 
     visualizationData.nodes.forEach((node) => {
-      const layerY = typeLayers[node.type] || 0;
-      const nodesInLayer = nodesByType.get(node.type) || [];
-      const indexInLayer = nodesInLayer.indexOf(node);
-      const nodesInLayerCount = nodesInLayer.length;
-      
-      // Arrange in a circle within the layer
-      const angle = nodesInLayerCount > 1 
-        ? (indexInLayer / nodesInLayerCount) * Math.PI * 2 
-        : 0;
-      
-      // Vary radius slightly based on layer
-      const layerRadius = radius * (1 - layerY * 0.15);
-      const x = Math.cos(angle) * layerRadius;
-      const z = Math.sin(angle) * layerRadius;
-      const y = layerY;
-      
-      const position = new THREE.Vector3(x, y, z);
+      if (node.parentId) {
+        if (!childrenMap.has(node.parentId)) {
+          childrenMap.set(node.parentId, []);
+        }
+        childrenMap.get(node.parentId)!.push(node);
+      } else {
+        roots.push(node);
+      }
+    });
+
+    if (!roots.length && visualizationData.nodes.length) {
+      const fallbackRoot = visualizationData.nodes[0];
+      if (fallbackRoot) {
+        roots.push(fallbackRoot);
+      }
+    }
+
+    const baseOrbit = 3.5;
+    const verticalSpacing = 1.2;
+
+    const placeNode = (node: OutlineNode, position: THREE.Vector3, depth: number) => {
       nodePositions.set(node.id, position);
+      depthMap.set(node.id, depth);
+      maxDistance = Math.max(maxDistance, position.length());
+      const children = childrenMap.get(node.id);
+      if (!children || children.length === 0) return;
+      const orbit = baseOrbit * Math.max(0.4, Math.pow(0.75, depth));
+      children.forEach((child, index) => {
+        const angle = (index / children.length) * Math.PI * 2;
+        const childPos = new THREE.Vector3(
+          position.x + Math.cos(angle) * orbit,
+          position.y + verticalSpacing,
+          position.z + Math.sin(angle) * orbit
+        );
+        placeNode(child, childPos, depth + 1);
+      });
+    };
+
+    roots.forEach((root, index) => {
+      const angle = roots.length > 1 ? (index / roots.length) * Math.PI * 2 : 0;
+      const radius = roots.length > 1 ? baseOrbit * 1.5 : 0;
+      const position = new THREE.Vector3(
+        Math.cos(angle) * radius,
+        0,
+        Math.sin(angle) * radius
+      );
+      placeNode(root, position, 0);
+    });
+
+    visualizationData.nodes.forEach((node) => {
+      if (!nodePositions.has(node.id)) {
+        nodePositions.set(node.id, new THREE.Vector3(0, 0, 0));
+        maxDistance = Math.max(maxDistance, 0);
+      }
+      const position = nodePositions.get(node.id)!;
+      const depth = depthMap.get(node.id) ?? 0;
 
       // Create geometry and material
-      const size = NODE_SIZES[node.type] || 1.0;
+      const baseSize = NODE_SIZES[node.type] || 1.0;
+      const depthScale = Math.max(0.45, 1 - depth * 0.12);
+      const size = baseSize * depthScale;
       const geometry = createNodeGeometry(node.type, size);
       const color = NODE_COLORS[node.type] || 0xffffff;
       const material = new THREE.MeshPhongMaterial({
@@ -395,7 +426,8 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
     });
 
     // Add subtle grid helper for depth perception
-    const gridHelper = new THREE.GridHelper(radius * 2.5, 10, 0x333333, 0x1a1a1a);
+    const gridHelperRadius = Math.max(10, (maxDistance || baseOrbit) * 2.5);
+    const gridHelper = new THREE.GridHelper(gridHelperRadius, 10, 0x333333, 0x1a1a1a);
     scene.add(gridHelper);
 
   }, [visualizationData]);
@@ -417,7 +449,7 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
 
       raycaster.setFromCamera(mouse, cameraRef.current!);
-      const intersects = raycaster.intersectObjects(Array.from(meshRefs.current.values()));
+      const intersects = raycaster.intersectObjects(Array.from(meshRefs.current.values()), true);
 
       if (intersects.length > 0) {
         const [firstIntersection] = intersects;
@@ -428,24 +460,9 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
         const nodeId = mesh.userData.nodeId;
         setHoveredNode(nodeId);
         container.style.cursor = 'pointer';
-        
-        // Highlight hovered node
-        meshRefs.current.forEach((m, id) => {
-          if (id === nodeId) {
-            (m.material as THREE.MeshPhongMaterial).emissiveIntensity = 0.6;
-            m.scale.set(1.15, 1.15, 1.15);
-          } else {
-            (m.material as THREE.MeshPhongMaterial).emissiveIntensity = 0.2;
-            m.scale.set(1, 1, 1);
-          }
-        });
       } else {
         setHoveredNode(null);
         container.style.cursor = 'default';
-        meshRefs.current.forEach((m) => {
-          (m.material as THREE.MeshPhongMaterial).emissiveIntensity = 0.2;
-          m.scale.set(1, 1, 1);
-        });
       }
     };
 
@@ -455,6 +472,77 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
       container.removeEventListener('mousemove', onMouseMoveHover);
     };
   }, [visualizationData]);
+
+  useEffect(() => {
+    meshRefs.current.forEach((mesh, id) => {
+      const material = mesh.material as THREE.MeshPhongMaterial;
+      const isSelected = effectiveSelectedNode === id;
+      const isHovered = hoveredNode === id;
+      if (isSelected) {
+        material.color.setHex(0xffff66);
+        material.emissive.setHex(0xffff66);
+      } else {
+        const baseColor = NODE_COLORS[(mesh.userData.nodeType as string) || 'default'] || 0xffffff;
+        material.color.setHex(baseColor);
+        material.emissive.setHex(baseColor);
+      }
+      material.emissiveIntensity = isSelected ? 0.9 : isHovered ? 0.5 : 0.2;
+      const scale = isSelected ? 1.3 : isHovered ? 1.1 : 1;
+      mesh.scale.set(scale, scale, scale);
+    });
+  }, [effectiveSelectedNode, hoveredNode]);
+
+  useEffect(() => {
+    if (!effectiveSelectedNode) {
+      focusPointRef.current.set(0, 0, 0);
+      return;
+    }
+    const mesh = meshRefs.current.get(effectiveSelectedNode);
+    if (mesh) {
+      focusPointRef.current.copy(mesh.position);
+    }
+  }, [effectiveSelectedNode]);
+
+  useEffect(() => {
+    if (!containerRef.current || !cameraRef.current) return;
+    const container = containerRef.current!;
+    const camera = cameraRef.current!;
+    const raycaster = new THREE.Raycaster();
+    const mouse = new THREE.Vector2();
+
+    const handleClick = (event: MouseEvent) => {
+      if (!visualizationData || !camera) return;
+      if (isDraggingRef.current) {
+        isDraggingRef.current = false;
+        return;
+      }
+      const rect = container.getBoundingClientRect();
+      mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+      mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+      raycaster.setFromCamera(mouse, camera);
+      const intersects = raycaster.intersectObjects(Array.from(meshRefs.current.values()), true);
+      if (intersects.length > 0) {
+        const [firstHit] = intersects;
+        if (firstHit) {
+          let target: THREE.Object3D | null = firstHit.object;
+          while (target && !(target as THREE.Mesh).userData?.nodeId) {
+            target = target.parent;
+          }
+          const nodeId = (target as THREE.Mesh | null)?.userData?.nodeId as string | undefined;
+          if (nodeId) {
+            setSelectedNode(nodeId);
+            onSelectNode?.(nodeId);
+            return;
+          }
+        }
+      }
+      setSelectedNode(null);
+      onSelectNode?.(null);
+    };
+
+    container.addEventListener('click', handleClick);
+    return () => container.removeEventListener('click', handleClick);
+  }, [visualizationData, onSelectNode]);
 
   return (
     <div className="diagram-container" ref={containerRef}>
@@ -488,3 +576,4 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing }) =
 };
 
 export default Diagram;
+

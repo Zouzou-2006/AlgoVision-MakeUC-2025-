@@ -1,24 +1,17 @@
 import { jsx as _jsx, jsxs as _jsxs } from "react/jsx-runtime";
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Toolbar from './Toolbar';
 import Editor from './Editor';
 import OutlinePanel from './OutlinePanel';
 import Diagram from './Diagram';
+import NodeDetails from './NodeDetails';
+import pythonSample from '../../assets/samples/advanced_sample.py?raw';
+import csharpSample from '../../assets/samples/AdvancedSample.cs?raw';
 const DOC_ID = 'doc-1';
-const defaultPythonCode = `def calculate_factorial(n):
-    """Calculate factorial of a number"""
-    if n <= 1:
-        return 1
-    else:
-        return n * calculate_factorial(n - 1)
-
-def main():
-    number = 5
-    result = calculate_factorial(number)
-    print(f"Factorial of {number} is {result}")
-
-if __name__ == "__main__":
-    main()`;
+const LANGUAGE_SAMPLES = {
+    python: pythonSample.trim(),
+    csharp: csharpSample.trim(),
+};
 const App = () => {
     const [theme, setTheme] = useState(() => {
         try {
@@ -28,20 +21,21 @@ const App = () => {
             return 'neon';
         }
     });
-    const [code, setCode] = useState(defaultPythonCode);
+    const [code, setCode] = useState(LANGUAGE_SAMPLES.python);
     const [outlineNodes, setOutlineNodes] = useState([]);
     const [visualizationData, setVisualizationData] = useState(null);
     const [explanation, setExplanation] = useState('');
     const [isVisualizing, setIsVisualizing] = useState(false);
     const [selectedLanguage, setSelectedLanguage] = useState('python');
+    const [selectedNodeId, setSelectedNodeId] = useState(null);
     const workerRef = useRef(null);
     const workerReadyRef = useRef(false);
     const docVersionRef = useRef(1);
     const docIdRef = useRef(DOC_ID);
     const requestCounterRef = useRef(0);
     const pendingAnalyzeRef = useRef(null);
-    const lastSyncedTextRef = useRef(defaultPythonCode);
-    const latestCodeRef = useRef(defaultPythonCode);
+    const lastSyncedTextRef = useRef(LANGUAGE_SAMPLES.python);
+    const latestCodeRef = useRef(LANGUAGE_SAMPLES.python);
     const latestLanguageRef = useRef('python');
     useEffect(() => {
         document.body.setAttribute('data-theme', theme);
@@ -84,6 +78,12 @@ const App = () => {
                     setOutlineNodes(message.ir.outline);
                     setVisualizationData(convertIRToVisualization(message.ir, message.language));
                     setExplanation(generateExplanation(message.ir, message.diagnostics));
+                    setSelectedNodeId((current) => {
+                        if (!current)
+                            return current;
+                        const exists = message.ir.outline.some((node) => node.id === current);
+                        return exists ? current : null;
+                    });
                     break;
                 case 'cancelled':
                     if (pendingAnalyzeRef.current === message.requestId) {
@@ -120,11 +120,13 @@ const App = () => {
             version: docVersionRef.current,
         });
         lastSyncedTextRef.current = text;
+        latestCodeRef.current = text;
     }, []);
     const handleCodeChange = useCallback((newCode) => {
         setCode(newCode);
         if (!workerReadyRef.current || !workerRef.current) {
             lastSyncedTextRef.current = newCode;
+            latestCodeRef.current = newCode;
             return;
         }
         const previousText = lastSyncedTextRef.current;
@@ -141,6 +143,7 @@ const App = () => {
             ],
         });
         lastSyncedTextRef.current = newCode;
+        latestCodeRef.current = newCode;
     }, []);
     const handleRunVisualization = useCallback(() => {
         if (!code.trim()) {
@@ -167,14 +170,31 @@ const App = () => {
     const handleThemeChange = useCallback((nextTheme) => setTheme(nextTheme), []);
     const handleLanguageChange = useCallback((lang) => {
         setSelectedLanguage(lang);
+        const sample = LANGUAGE_SAMPLES[lang] ?? '';
+        setCode(sample);
+        latestCodeRef.current = sample;
+        setSelectedNodeId(null);
         if (workerReadyRef.current) {
-            openDocument(lang, latestCodeRef.current);
+            openDocument(lang, sample);
             setVisualizationData(null);
             setOutlineNodes([]);
-            setExplanation(`Language switched to ${lang}. Run analysis to refresh results.`);
+            setExplanation(`Loaded ${lang.toUpperCase()} sample. Run analysis to visualize.`);
+        }
+        else {
+            lastSyncedTextRef.current = sample;
         }
     }, [openDocument]);
-    return (_jsxs("div", { className: "app-container", children: [_jsx("header", { className: "app-header", children: _jsxs("div", { className: "brand", children: [_jsx("img", { src: "/favicon.svg", alt: "AlgoVision", style: { width: 40, height: 40, borderRadius: 8 } }), _jsxs("div", { children: [_jsx("h1", { className: "title", children: "AlgoVision" }), _jsx("p", { className: "subtitle", children: "3D Code Visualization for Beginners" })] })] }) }), _jsxs("main", { className: "main-grid", children: [_jsxs("div", { className: "editor-pane", children: [_jsx(Toolbar, { onRun: handleRunVisualization, onLanguageChange: handleLanguageChange, isVisualizing: isVisualizing, onThemeChange: handleThemeChange, currentTheme: theme, currentLanguage: selectedLanguage }), _jsx(Editor, { code: code, onChange: handleCodeChange, language: selectedLanguage }), _jsx(OutlinePanel, { nodes: outlineNodes })] }), _jsx("div", { className: "visualization-pane", children: _jsx(Diagram, { visualizationData: visualizationData, isVisualizing: isVisualizing }) })] }), _jsxs("aside", { className: "explanation-panel", children: [_jsxs("div", { className: "explanation-header", children: [_jsx("h3", { children: "AI Explanation" }), _jsx("span", { className: "ai-icon", children: "dY\u000F-" })] }), _jsx("div", { className: "explanation-content", children: explanation || (_jsx("div", { className: "explanation-placeholder", children: _jsx("p", { children: "Click \"Run Visualization\" to see Tree-sitter powered insights." }) })) })] }), _jsxs("footer", { className: "status-bar", children: [_jsxs("div", { className: "status-item", children: [_jsx("span", { className: "status-label", children: "Status:" }), _jsx("span", { className: "status-value", children: isVisualizing ? 'Analyzing...' : 'Ready' })] }), _jsxs("div", { className: "status-item", children: [_jsx("span", { className: "status-label", children: "Language:" }), _jsx("span", { className: "status-value", children: selectedLanguage })] }), _jsxs("div", { className: "status-item", children: [_jsx("span", { className: "status-label", children: "3D Engine:" }), _jsx("span", { className: "status-value", children: "Three.js" })] })] })] }));
+    const vizNodes = visualizationData?.nodes ?? [];
+    const vizEdges = visualizationData?.edges ?? [];
+    const selectedNode = useMemo(() => {
+        if (!selectedNodeId)
+            return null;
+        return vizNodes.find((node) => node.id === selectedNodeId) ?? null;
+    }, [vizNodes, selectedNodeId]);
+    const handleNodeSelect = useCallback((nodeId) => {
+        setSelectedNodeId(nodeId);
+    }, []);
+    return (_jsxs("div", { className: "app-container", children: [_jsx("header", { className: "app-header", children: _jsxs("div", { className: "brand", children: [_jsx("img", { src: "/favicon.svg", alt: "AlgoVision", style: { width: 40, height: 40, borderRadius: 8 } }), _jsxs("div", { children: [_jsx("h1", { className: "title", children: "AlgoVision" }), _jsx("p", { className: "subtitle", children: "3D Code Visualization for Beginners" })] })] }) }), _jsxs("main", { className: "main-grid", children: [_jsxs("div", { className: "editor-pane", children: [_jsx(Toolbar, { onRun: handleRunVisualization, onLanguageChange: handleLanguageChange, isVisualizing: isVisualizing, onThemeChange: handleThemeChange, currentTheme: theme, currentLanguage: selectedLanguage }), _jsx(Editor, { code: code, onChange: handleCodeChange, language: selectedLanguage })] }), _jsx("div", { className: "visualization-pane", children: _jsx(Diagram, { visualizationData: visualizationData, isVisualizing: isVisualizing, onSelectNode: setSelectedNodeId, selectedNodeId: selectedNodeId }) }), _jsxs("aside", { className: "analysis-pane", children: [_jsx(OutlinePanel, { nodes: vizNodes, selectedId: selectedNodeId, onSelect: handleNodeSelect }), _jsx(NodeDetails, { node: selectedNode, edges: vizEdges, allNodes: vizNodes, code: code })] })] }), _jsxs("aside", { className: "explanation-panel", children: [_jsxs("div", { className: "explanation-header", children: [_jsx("h3", { children: "AI Explanation" }), _jsx("span", { className: "ai-icon", children: "dY\u000F-" })] }), _jsx("div", { className: "explanation-content", children: explanation || (_jsx("div", { className: "explanation-placeholder", children: _jsx("p", { children: "Click \"Run Visualization\" to see Tree-sitter powered insights." }) })) })] }), _jsxs("footer", { className: "status-bar", children: [_jsxs("div", { className: "status-item", children: [_jsx("span", { className: "status-label", children: "Status:" }), _jsx("span", { className: "status-value", children: isVisualizing ? 'Analyzing...' : 'Ready' })] }), _jsxs("div", { className: "status-item", children: [_jsx("span", { className: "status-label", children: "Language:" }), _jsx("span", { className: "status-value", children: selectedLanguage })] }), _jsxs("div", { className: "status-item", children: [_jsx("span", { className: "status-label", children: "3D Engine:" }), _jsx("span", { className: "status-value", children: "Three.js" })] })] })] }));
 };
 function fullDocumentRange(text) {
     if (!text) {
@@ -199,30 +219,86 @@ function convertIRToVisualization(ir, language) {
         if (node.params && node.params.length > 0) {
             outline.metadata = { params: node.params };
         }
+        if (node.parentId) {
+            outline.parentId = node.parentId;
+        }
         return outline;
     });
+    const rootNode = nodes.find((n) => n.type === 'module') ?? nodes[0];
+    const nodesByName = new Map();
+    nodes.forEach((node) => {
+        const key = node.name.toLowerCase();
+        const bucket = nodesByName.get(key) ?? [];
+        bucket.push(node);
+        nodesByName.set(key, bucket);
+    });
     const edges = [];
+    const pushEdge = (edge) => {
+        edges.push({ ...edge, id: `edge_${edges.length}` });
+    };
     ir.outline.forEach((node) => {
         if (node.parentId) {
-            edges.push({
-                id: `edge_${edges.length}`,
+            pushEdge({
                 from: node.parentId,
                 to: node.id,
                 type: 'control',
-                label: '',
+                label: 'contains',
             });
         }
     });
-    ir.calls.forEach((call) => {
-        edges.push({
-            id: `edge_${edges.length}`,
-            from: call.callerId,
-            to: call.calleeName,
-            type: 'call',
-            label: call.kind,
+    ir.imports.forEach((importEntry, index) => {
+        const importNode = {
+            id: `import:${index}:${importEntry.name}`,
+            name: importEntry.name,
+            type: 'import',
+            location: rootNode.location,
+            parentId: rootNode.id,
+        };
+        if (importEntry.alias) {
+            importNode.metadata = { alias: importEntry.alias };
+        }
+        nodes.push(importNode);
+        const key = importNode.name.toLowerCase();
+        const bucket = nodesByName.get(key) ?? [];
+        bucket.push(importNode);
+        nodesByName.set(key, bucket);
+        pushEdge({
+            from: rootNode.id,
+            to: importNode.id,
+            type: 'data',
+            label: importEntry.alias ? `import as ${importEntry.alias}` : 'imports',
         });
     });
-    const rootNode = nodes.find((n) => n.type === 'module') ?? nodes[0];
+    const externalNodes = new Map();
+    const ensureExternalNode = (name) => {
+        const key = name.toLowerCase();
+        if (!externalNodes.has(key)) {
+            const externalNode = {
+                id: `external:${key}:${externalNodes.size}`,
+                name,
+                type: 'function',
+                location: rootNode.location,
+                metadata: { source: 'external' },
+                external: true,
+            };
+            externalNodes.set(key, externalNode);
+            nodes.push(externalNode);
+            const bucket = nodesByName.get(key) ?? [];
+            bucket.push(externalNode);
+            nodesByName.set(key, bucket);
+        }
+        return externalNodes.get(key);
+    };
+    ir.calls.forEach((call) => {
+        const targetGroup = nodesByName.get(call.calleeName.toLowerCase());
+        const targetNode = targetGroup?.[0] ?? ensureExternalNode(call.calleeName);
+        pushEdge({
+            from: call.callerId,
+            to: targetNode.id,
+            type: 'call',
+            label: call.kind === 'member' ? 'member call' : 'call',
+        });
+    });
     return {
         nodes,
         edges,

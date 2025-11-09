@@ -14,6 +14,8 @@ export interface OutlineNode {
     location: SourceLocation;
     children?: OutlineNode[];
     metadata?: Record<string, any>;
+    parentId?: string;
+    external?: boolean;
 }
 export interface DataFlowEdge {
     id: string;

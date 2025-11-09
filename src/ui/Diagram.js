@@ -49,7 +49,7 @@ function createNodeGeometry(type, size) {
             return new THREE.SphereGeometry(size, 8, 8);
     }
 }
-const Diagram = ({ visualizationData, isVisualizing }) => {
+const Diagram = ({ visualizationData, isVisualizing, onSelectNode, selectedNodeId }) => {
     const containerRef = useRef(null);
     const sceneRef = useRef(null);
     const rendererRef = useRef(null);
@@ -59,8 +59,15 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
     const meshRefs = useRef(new Map());
     const lineRefs = useRef(new Map());
     const isDraggingRef = useRef(false);
+    const focusPointRef = useRef(new THREE.Vector3(0, 0, 0));
     const [selectedNode, setSelectedNode] = useState(null);
     const [hoveredNode, setHoveredNode] = useState(null);
+    const effectiveSelectedNode = selectedNodeId ?? selectedNode;
+    useEffect(() => {
+        if (selectedNodeId !== undefined) {
+            setSelectedNode(selectedNodeId);
+        }
+    }, [selectedNodeId]);
     const hoveredDetails = useMemo(() => {
         if (!hoveredNode || !visualizationData)
             return null;
@@ -146,11 +153,12 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
             animationFrameRef.current = requestAnimationFrame(animate);
             // Update camera position based on controls
             if (cameraRef.current) {
-                const x = Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
-                const y = Math.sin(cameraAngleX) * cameraDistance;
-                const z = Math.cos(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
-                cameraRef.current.position.set(x, y, z);
-                cameraRef.current.lookAt(0, 0, 0);
+                const focus = focusPointRef.current ?? new THREE.Vector3(0, 0, 0);
+                const offsetX = Math.sin(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
+                const offsetY = Math.sin(cameraAngleX) * cameraDistance;
+                const offsetZ = Math.cos(cameraAngleY) * Math.cos(cameraAngleX) * cameraDistance;
+                cameraRef.current.position.set(focus.x + offsetX, focus.y + offsetY, focus.z + offsetZ);
+                cameraRef.current.lookAt(focus);
             }
             // Rotate nodes slightly for visual appeal
             meshRefs.current.forEach((mesh) => {
@@ -238,47 +246,62 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
             }
         });
         lineRefs.current.clear();
-        // Calculate hierarchical layout based on node types
-        const nodeCount = visualizationData.nodes.length;
-        const radius = Math.max(6, Math.min(12, nodeCount * 0.6));
+        // Build parent-child relationships
         const nodePositions = new Map();
-        // Group nodes by type for better organization
-        const nodesByType = new Map();
-        visualizationData.nodes.forEach(node => {
-            if (!nodesByType.has(node.type)) {
-                nodesByType.set(node.type, []);
-            }
-            nodesByType.get(node.type).push(node);
-        });
-        // Position nodes in layers by type
-        const typeLayers = {
-            module: 3,
-            namespace: 2.5,
-            class: 2,
-            interface: 1.8,
-            function: 1,
-            variable: 0.5,
-            loop: 0.3,
-            conditional: 0.3,
-        };
+        const depthMap = new Map();
+        const childrenMap = new Map();
+        const roots = [];
+        let maxDistance = 0;
         visualizationData.nodes.forEach((node) => {
-            const layerY = typeLayers[node.type] || 0;
-            const nodesInLayer = nodesByType.get(node.type) || [];
-            const indexInLayer = nodesInLayer.indexOf(node);
-            const nodesInLayerCount = nodesInLayer.length;
-            // Arrange in a circle within the layer
-            const angle = nodesInLayerCount > 1
-                ? (indexInLayer / nodesInLayerCount) * Math.PI * 2
-                : 0;
-            // Vary radius slightly based on layer
-            const layerRadius = radius * (1 - layerY * 0.15);
-            const x = Math.cos(angle) * layerRadius;
-            const z = Math.sin(angle) * layerRadius;
-            const y = layerY;
-            const position = new THREE.Vector3(x, y, z);
+            if (node.parentId) {
+                if (!childrenMap.has(node.parentId)) {
+                    childrenMap.set(node.parentId, []);
+                }
+                childrenMap.get(node.parentId).push(node);
+            }
+            else {
+                roots.push(node);
+            }
+        });
+        if (!roots.length && visualizationData.nodes.length) {
+            const fallbackRoot = visualizationData.nodes[0];
+            if (fallbackRoot) {
+                roots.push(fallbackRoot);
+            }
+        }
+        const baseOrbit = 3.5;
+        const verticalSpacing = 1.2;
+        const placeNode = (node, position, depth) => {
             nodePositions.set(node.id, position);
+            depthMap.set(node.id, depth);
+            maxDistance = Math.max(maxDistance, position.length());
+            const children = childrenMap.get(node.id);
+            if (!children || children.length === 0)
+                return;
+            const orbit = baseOrbit * Math.max(0.4, Math.pow(0.75, depth));
+            children.forEach((child, index) => {
+                const angle = (index / children.length) * Math.PI * 2;
+                const childPos = new THREE.Vector3(position.x + Math.cos(angle) * orbit, position.y + verticalSpacing, position.z + Math.sin(angle) * orbit);
+                placeNode(child, childPos, depth + 1);
+            });
+        };
+        roots.forEach((root, index) => {
+            const angle = roots.length > 1 ? (index / roots.length) * Math.PI * 2 : 0;
+            const radius = roots.length > 1 ? baseOrbit * 1.5 : 0;
+            const position = new THREE.Vector3(Math.cos(angle) * radius, 0, Math.sin(angle) * radius);
+            placeNode(root, position, 0);
+        });
+        visualizationData.nodes.forEach((node) => {
+            if (!nodePositions.has(node.id)) {
+                nodePositions.set(node.id, new THREE.Vector3(0, 0, 0));
+                maxDistance = Math.max(maxDistance, 0);
+            }
+            const position = nodePositions.get(node.id);
+            const depth = depthMap.get(node.id) ?? 0;
             // Create geometry and material
-            const size = NODE_SIZES[node.type] || 1.0;
+            const baseSize = NODE_SIZES[node.type] || 1.0;
+            const depthScale = Math.max(0.45, 1 - depth * 0.12);
+            const size = baseSize * depthScale;
             const geometry = createNodeGeometry(node.type, size);
             const color = NODE_COLORS[node.type] || 0xffffff;
             const material = new THREE.MeshPhongMaterial({
@@ -343,7 +366,8 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
             lineRefs.current.set(edge.id, line);
         });
         // Add subtle grid helper for depth perception
-        const gridHelper = new THREE.GridHelper(radius * 2.5, 10, 0x333333, 0x1a1a1a);
+        const gridHelperRadius = Math.max(10, (maxDistance || baseOrbit) * 2.5);
+        const gridHelper = new THREE.GridHelper(gridHelperRadius, 10, 0x333333, 0x1a1a1a);
         scene.add(gridHelper);
     }, [visualizationData]);
     // Handle node hover (separate from drag controls)
@@ -361,7 +385,7 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
             mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
             mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
             raycaster.setFromCamera(mouse, cameraRef.current);
-            const intersects = raycaster.intersectObjects(Array.from(meshRefs.current.values()));
+            const intersects = raycaster.intersectObjects(Array.from(meshRefs.current.values()), true);
             if (intersects.length > 0) {
                 const [firstIntersection] = intersects;
                 if (!firstIntersection) {
@@ -371,25 +395,10 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
                 const nodeId = mesh.userData.nodeId;
                 setHoveredNode(nodeId);
                 container.style.cursor = 'pointer';
-                // Highlight hovered node
-                meshRefs.current.forEach((m, id) => {
-                    if (id === nodeId) {
-                        m.material.emissiveIntensity = 0.6;
-                        m.scale.set(1.15, 1.15, 1.15);
-                    }
-                    else {
-                        m.material.emissiveIntensity = 0.2;
-                        m.scale.set(1, 1, 1);
-                    }
-                });
             }
             else {
                 setHoveredNode(null);
                 container.style.cursor = 'default';
-                meshRefs.current.forEach((m) => {
-                    m.material.emissiveIntensity = 0.2;
-                    m.scale.set(1, 1, 1);
-                });
             }
         };
         container.addEventListener('mousemove', onMouseMoveHover, { passive: true });
@@ -397,6 +406,75 @@ const Diagram = ({ visualizationData, isVisualizing }) => {
             container.removeEventListener('mousemove', onMouseMoveHover);
         };
     }, [visualizationData]);
+    useEffect(() => {
+        meshRefs.current.forEach((mesh, id) => {
+            const material = mesh.material;
+            const isSelected = effectiveSelectedNode === id;
+            const isHovered = hoveredNode === id;
+            if (isSelected) {
+                material.color.setHex(0xffff66);
+                material.emissive.setHex(0xffff66);
+            }
+            else {
+                const baseColor = NODE_COLORS[mesh.userData.nodeType || 'default'] || 0xffffff;
+                material.color.setHex(baseColor);
+                material.emissive.setHex(baseColor);
+            }
+            material.emissiveIntensity = isSelected ? 0.9 : isHovered ? 0.5 : 0.2;
+            const scale = isSelected ? 1.3 : isHovered ? 1.1 : 1;
+            mesh.scale.set(scale, scale, scale);
+        });
+    }, [effectiveSelectedNode, hoveredNode]);
+    useEffect(() => {
+        if (!effectiveSelectedNode) {
+            focusPointRef.current.set(0, 0, 0);
+            return;
+        }
+        const mesh = meshRefs.current.get(effectiveSelectedNode);
+        if (mesh) {
+            focusPointRef.current.copy(mesh.position);
+        }
+    }, [effectiveSelectedNode]);
+    useEffect(() => {
+        if (!containerRef.current || !cameraRef.current)
+            return;
+        const container = containerRef.current;
+        const camera = cameraRef.current;
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const handleClick = (event) => {
+            if (!visualizationData || !camera)
+                return;
+            if (isDraggingRef.current) {
+                isDraggingRef.current = false;
+                return;
+            }
+            const rect = container.getBoundingClientRect();
+            mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+            mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+            raycaster.setFromCamera(mouse, camera);
+            const intersects = raycaster.intersectObjects(Array.from(meshRefs.current.values()), true);
+            if (intersects.length > 0) {
+                const [firstHit] = intersects;
+                if (firstHit) {
+                    let target = firstHit.object;
+                    while (target && !target.userData?.nodeId) {
+                        target = target.parent;
+                    }
+                    const nodeId = target?.userData?.nodeId;
+                    if (nodeId) {
+                        setSelectedNode(nodeId);
+                        onSelectNode?.(nodeId);
+                        return;
+                    }
+                }
+            }
+            setSelectedNode(null);
+            onSelectNode?.(null);
+        };
+        container.addEventListener('click', handleClick);
+        return () => container.removeEventListener('click', handleClick);
+    }, [visualizationData, onSelectNode]);
     return (_jsxs("div", { className: "diagram-container", ref: containerRef, children: [isVisualizing && (_jsx("div", { className: "visualization-loading", children: _jsx("div", { className: "loader", children: "Rendering 3D visualization..." }) })), !visualizationData && !isVisualizing && (_jsxs("div", { className: "canvas-placeholder", children: [_jsx("div", { style: { fontSize: '24px', marginBottom: '10px' }, children: "\uD83C\uDFA8" }), _jsx("div", { children: "Enter code and click \"Run Visualization\" to see your code in 3D" })] })), hoveredDetails && (_jsxs("div", { className: "node-tooltip", children: [_jsx("div", { className: "tooltip-name", children: hoveredDetails.name }), _jsxs("div", { className: "tooltip-type", children: ["Type: ", hoveredDetails.type] })] })), visualizationData ? (_jsxs("div", { className: "controls-info", children: [_jsx("div", { className: "controls-title", children: "Controls" }), _jsx("div", { className: "controls-item", children: "\uD83D\uDDB1\uFE0F Drag: Rotate view" }), _jsx("div", { className: "controls-item", children: "\uD83D\uDD0D Scroll: Zoom in/out" }), _jsx("div", { className: "controls-item", children: "\uD83D\uDC46 Hover: See details" })] })) : null] }));
 };
 export default Diagram;

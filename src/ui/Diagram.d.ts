@@ -4,6 +4,8 @@ import './Diagram.css';
 type DiagramProps = {
     visualizationData: VisualizationData | null;
     isVisualizing: boolean;
+    onSelectNode?: (nodeId: string | null) => void;
+    selectedNodeId?: string | null;
 };
 declare const Diagram: React.FC<DiagramProps>;
 export default Diagram;

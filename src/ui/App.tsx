@@ -1,8 +1,9 @@
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef, useEffect, useMemo } from 'react';
 import Toolbar from './Toolbar';
 import Editor from './Editor';
 import OutlinePanel from './OutlinePanel';
 import Diagram from './Diagram';
+import NodeDetails from './NodeDetails';
 import type {
   VisualizationData,
   OutlineNode,
@@ -14,6 +15,8 @@ import type {
   IRRange,
   Diagnostic,
 } from '../core/ir';
+import pythonSample from '../../assets/samples/advanced_sample.py?raw';
+import csharpSample from '../../assets/samples/AdvancedSample.cs?raw';
 
 type SupportedLanguage = 'python' | 'csharp';
 
@@ -31,21 +34,10 @@ type WorkerCancelled = { kind: 'cancelled'; requestId: string };
 type WorkerMessage = WorkerInitDone | WorkerResult | WorkerCancelled;
 
 const DOC_ID = 'doc-1';
-
-const defaultPythonCode = `def calculate_factorial(n):
-    """Calculate factorial of a number"""
-    if n <= 1:
-        return 1
-    else:
-        return n * calculate_factorial(n - 1)
-
-def main():
-    number = 5
-    result = calculate_factorial(number)
-    print(f"Factorial of {number} is {result}")
-
-if __name__ == "__main__":
-    main()`;
+const LANGUAGE_SAMPLES: Record<SupportedLanguage, string> = {
+  python: pythonSample.trim(),
+  csharp: csharpSample.trim(),
+};
 
 const App: React.FC = () => {
   const [theme, setTheme] = useState<string>(() => {
@@ -55,12 +47,13 @@ const App: React.FC = () => {
       return 'neon';
     }
   });
-  const [code, setCode] = useState<string>(defaultPythonCode);
+  const [code, setCode] = useState<string>(LANGUAGE_SAMPLES.python);
   const [outlineNodes, setOutlineNodes] = useState<IROutlineNode[]>([]);
   const [visualizationData, setVisualizationData] = useState<VisualizationData | null>(null);
   const [explanation, setExplanation] = useState<string>('');
   const [isVisualizing, setIsVisualizing] = useState<boolean>(false);
   const [selectedLanguage, setSelectedLanguage] = useState<SupportedLanguage>('python');
+  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
 
   const workerRef = useRef<Worker | null>(null);
   const workerReadyRef = useRef(false);
@@ -68,8 +61,8 @@ const App: React.FC = () => {
   const docIdRef = useRef(DOC_ID);
   const requestCounterRef = useRef(0);
   const pendingAnalyzeRef = useRef<string | null>(null);
-  const lastSyncedTextRef = useRef<string>(defaultPythonCode);
-  const latestCodeRef = useRef<string>(defaultPythonCode);
+  const lastSyncedTextRef = useRef<string>(LANGUAGE_SAMPLES.python);
+  const latestCodeRef = useRef<string>(LANGUAGE_SAMPLES.python);
   const latestLanguageRef = useRef<SupportedLanguage>('python');
 
   useEffect(() => {
@@ -119,6 +112,11 @@ const App: React.FC = () => {
           setOutlineNodes(message.ir.outline);
           setVisualizationData(convertIRToVisualization(message.ir, message.language));
           setExplanation(generateExplanation(message.ir, message.diagnostics));
+          setSelectedNodeId((current) => {
+            if (!current) return current;
+            const exists = message.ir.outline.some((node) => node.id === current);
+            return exists ? current : null;
+          });
           break;
         case 'cancelled':
           if (pendingAnalyzeRef.current === message.requestId) {
@@ -152,12 +150,13 @@ const App: React.FC = () => {
     docVersionRef.current = 1;
     workerRef.current.postMessage({
       kind: 'openDoc',
-      docId: docIdRef.current,
-      language,
-      text,
-      version: docVersionRef.current,
-    });
+    docId: docIdRef.current,
+    language,
+    text,
+    version: docVersionRef.current,
+  });
     lastSyncedTextRef.current = text;
+    latestCodeRef.current = text;
   }, []);
 
   const handleCodeChange = useCallback(
@@ -165,6 +164,7 @@ const App: React.FC = () => {
       setCode(newCode);
       if (!workerReadyRef.current || !workerRef.current) {
         lastSyncedTextRef.current = newCode;
+        latestCodeRef.current = newCode;
         return;
       }
 
@@ -182,6 +182,7 @@ const App: React.FC = () => {
         ],
       });
       lastSyncedTextRef.current = newCode;
+      latestCodeRef.current = newCode;
     },
     []
   );
@@ -217,14 +218,35 @@ const App: React.FC = () => {
   const handleLanguageChange = useCallback(
     (lang: SupportedLanguage) => {
       setSelectedLanguage(lang);
+      const sample = LANGUAGE_SAMPLES[lang] ?? '';
+      setCode(sample);
+      latestCodeRef.current = sample;
+      setSelectedNodeId(null);
       if (workerReadyRef.current) {
-        openDocument(lang, latestCodeRef.current);
+        openDocument(lang, sample);
         setVisualizationData(null);
         setOutlineNodes([]);
-        setExplanation(`Language switched to ${lang}. Run analysis to refresh results.`);
+        setExplanation(`Loaded ${lang.toUpperCase()} sample. Run analysis to visualize.`);
+      } else {
+        lastSyncedTextRef.current = sample;
       }
     },
     [openDocument]
+  );
+
+  const vizNodes = visualizationData?.nodes ?? [];
+  const vizEdges = visualizationData?.edges ?? [];
+
+  const selectedNode = useMemo(() => {
+    if (!selectedNodeId) return null;
+    return vizNodes.find((node) => node.id === selectedNodeId) ?? null;
+  }, [vizNodes, selectedNodeId]);
+
+  const handleNodeSelect = useCallback(
+    (nodeId: string) => {
+      setSelectedNodeId(nodeId);
+    },
+    []
   );
 
   return (
@@ -250,12 +272,25 @@ const App: React.FC = () => {
             currentLanguage={selectedLanguage}
           />
           <Editor code={code} onChange={handleCodeChange} language={selectedLanguage} />
-          <OutlinePanel nodes={outlineNodes} />
         </div>
 
         <div className="visualization-pane">
-          <Diagram visualizationData={visualizationData} isVisualizing={isVisualizing} />
+          <Diagram
+            visualizationData={visualizationData}
+            isVisualizing={isVisualizing}
+            onSelectNode={setSelectedNodeId}
+            selectedNodeId={selectedNodeId}
+          />
         </div>
+
+        <aside className="analysis-pane">
+          <OutlinePanel
+            nodes={vizNodes}
+            selectedId={selectedNodeId}
+            onSelect={handleNodeSelect}
+          />
+          <NodeDetails node={selectedNode} edges={vizEdges} allNodes={vizNodes} code={code} />
+        </aside>
       </main>
 
       <aside className="explanation-panel">
@@ -315,33 +350,92 @@ function convertIRToVisualization(ir: IRDocument, language: string): Visualizati
     if (node.params && node.params.length > 0) {
       outline.metadata = { params: node.params };
     }
+    if (node.parentId) {
+      outline.parentId = node.parentId;
+    }
     return outline;
   });
 
+  const rootNode = nodes.find((n) => n.type === 'module') ?? nodes[0]!;
+  const nodesByName = new Map<string, OutlineNode[]>();
+  nodes.forEach((node) => {
+    const key = node.name.toLowerCase();
+    const bucket = nodesByName.get(key) ?? [];
+    bucket.push(node);
+    nodesByName.set(key, bucket);
+  });
+
   const edges: DataFlowEdge[] = [];
+  const pushEdge = (edge: Omit<DataFlowEdge, 'id'>) => {
+    edges.push({ ...edge, id: `edge_${edges.length}` });
+  };
+
   ir.outline.forEach((node) => {
     if (node.parentId) {
-      edges.push({
-        id: `edge_${edges.length}`,
+      pushEdge({
         from: node.parentId,
         to: node.id,
         type: 'control',
-        label: '',
+        label: 'contains',
       });
     }
   });
 
-  ir.calls.forEach((call) => {
-    edges.push({
-      id: `edge_${edges.length}`,
-      from: call.callerId,
-      to: call.calleeName,
-      type: 'call',
-      label: call.kind,
+  ir.imports.forEach((importEntry, index) => {
+    const importNode: OutlineNode = {
+      id: `import:${index}:${importEntry.name}`,
+      name: importEntry.name,
+      type: 'import',
+      location: rootNode.location,
+      parentId: rootNode.id,
+    };
+    if (importEntry.alias) {
+      importNode.metadata = { alias: importEntry.alias };
+    }
+    nodes.push(importNode);
+    const key = importNode.name.toLowerCase();
+    const bucket = nodesByName.get(key) ?? [];
+    bucket.push(importNode);
+    nodesByName.set(key, bucket);
+    pushEdge({
+      from: rootNode.id,
+      to: importNode.id,
+      type: 'data',
+      label: importEntry.alias ? `import as ${importEntry.alias}` : 'imports',
     });
   });
 
-  const rootNode = nodes.find((n) => n.type === 'module') ?? nodes[0]!;
+  const externalNodes = new Map<string, OutlineNode>();
+  const ensureExternalNode = (name: string): OutlineNode => {
+    const key = name.toLowerCase();
+    if (!externalNodes.has(key)) {
+      const externalNode: OutlineNode = {
+        id: `external:${key}:${externalNodes.size}`,
+        name,
+        type: 'function',
+        location: rootNode.location,
+        metadata: { source: 'external' },
+        external: true,
+      };
+      externalNodes.set(key, externalNode);
+      nodes.push(externalNode);
+      const bucket = nodesByName.get(key) ?? [];
+      bucket.push(externalNode);
+      nodesByName.set(key, bucket);
+    }
+    return externalNodes.get(key)!;
+  };
+
+  ir.calls.forEach((call) => {
+    const targetGroup = nodesByName.get(call.calleeName.toLowerCase());
+    const targetNode = targetGroup?.[0] ?? ensureExternalNode(call.calleeName);
+    pushEdge({
+      from: call.callerId,
+      to: targetNode.id,
+      type: 'call',
+      label: call.kind === 'member' ? 'member call' : 'call',
+    });
+  });
 
   return {
     nodes,
