@@ -304,8 +304,8 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       }
     }
 
-    const baseOrbit = 3.5;
-    const verticalSpacing = 1.2;
+    const baseOrbit = 5.5;
+    const verticalSpacing = 1.8;
 
     const placeNode = (node: OutlineNode, position: THREE.Vector3, depth: number) => {
       nodePositions.set(node.id, position);
@@ -313,27 +313,42 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
       maxDistance = Math.max(maxDistance, position.length());
       const children = childrenMap.get(node.id);
       if (!children || children.length === 0) return;
-      const orbit = baseOrbit * Math.max(0.4, Math.pow(0.75, depth));
+      const orbit =
+        baseOrbit * Math.max(0.6, Math.pow(0.75, depth)) + children.length * 0.35;
       children.forEach((child, index) => {
         const angle = (index / children.length) * Math.PI * 2;
         const childPos = new THREE.Vector3(
           position.x + Math.cos(angle) * orbit,
-          position.y + verticalSpacing,
+          position.y,
           position.z + Math.sin(angle) * orbit
         );
         placeNode(child, childPos, depth + 1);
       });
     };
 
-    roots.forEach((root, index) => {
-      const angle = roots.length > 1 ? (index / roots.length) * Math.PI * 2 : 0;
-      const radius = roots.length > 1 ? baseOrbit * 1.5 : 0;
-      const position = new THREE.Vector3(
-        Math.cos(angle) * radius,
-        0,
-        Math.sin(angle) * radius
-      );
-      placeNode(root, position, 0);
+    // distribute roots into layers by type to keep spacing readable
+    const rootLayers = new Map<string, OutlineNode[]>();
+    roots.forEach((root) => {
+      const layerKey = root.type;
+      const group = rootLayers.get(layerKey) ?? [];
+      group.push(root);
+      rootLayers.set(layerKey, group);
+    });
+
+    let rootLayerIndex = 0;
+    const rootLayerSpacing = verticalSpacing * 2.5;
+    rootLayers.forEach((group) => {
+      const radius = baseOrbit * 2.5 + rootLayerIndex * baseOrbit;
+      group.forEach((root, index) => {
+        const angle = group.length > 1 ? (index / group.length) * Math.PI * 2 : 0;
+        const position = new THREE.Vector3(
+          Math.cos(angle) * radius,
+          rootLayerIndex * rootLayerSpacing,
+          Math.sin(angle) * radius
+        );
+        placeNode(root, position, 0);
+      });
+      rootLayerIndex += 1;
     });
 
     visualizationData.nodes.forEach((node) => {
@@ -346,7 +361,7 @@ const Diagram: React.FC<DiagramProps> = ({ visualizationData, isVisualizing, onS
 
       // Create geometry and material
       const baseSize = NODE_SIZES[node.type] || 1.0;
-      const depthScale = Math.max(0.45, 1 - depth * 0.12);
+      const depthScale = Math.max(0.3, Math.pow(0.72, depth));
       const size = baseSize * depthScale;
       const geometry = createNodeGeometry(node.type, size);
       const color = NODE_COLORS[node.type] || 0xffffff;
